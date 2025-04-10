@@ -1,0 +1,7 @@
+build/*
+dist/*
+ot.json
+src/__pycache__/*
+OT.spec
+OT_Ground.spec
+pun.ico
