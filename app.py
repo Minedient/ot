@@ -6,7 +6,6 @@ from src.json_func import OTDStorage
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 from PySide6.QtGui import QPainter, QFont, QRegularExpressionValidator
 from src.sdtime import SDTime
-import argparse
 
 jsonFileName = "ot.json"
 otdStorage = OTDStorage(jsonFileName)
@@ -25,6 +24,10 @@ class OTCalculator(QDialog):
             Calculate the actual work hours based on the input times.
             """
             # Ensure the full time is entered in the format HH:MM before passing to diffTime
+            for edit in [backTimeEdit, riceTimeEdit, lunchEndEdit, workEndEdit]:
+                if len(edit.text()) == 2:
+                    edit.setText(edit.text() + ":")
+
             backTime = backTimeEdit.text() if len(backTimeEdit.text()) == 5 else ""
             riceTime = riceTimeEdit.text() if len(riceTimeEdit.text()) == 5 else ""
             lunchEnd = lunchEndEdit.text() if len(lunchEndEdit.text()) == 5 else ""
@@ -350,6 +353,25 @@ class OTGUI(QMainWindow):
         layout.addWidget(close_button)
         dialog.setLayout(layout)
         dialog.exec()
+    
+    def showDetailedStats(self, turnOff=False):
+        """
+        This function add a new panel between the bottom'est button and the monthly stats panel,
+        after that resize the window to fit the new panel.
+
+        The state of the show detailed stats button will be changed to "隱藏更詳細的統計"
+        and this function will be called again to hide the detailed stats panel.
+        """
+        if turnOff:
+            # Hide the detailed stats panel
+            self.detailedStatsFrame.hide()
+            self.detailedStatsButton.setText("顯示更詳細的統計")
+            return
+        else:
+            # Show the detailed stats panel
+            self.detailedStatsFrame.show()
+            self.detailedStatsButton.setText("隱藏更詳細的統計")
+            self.resize(self.width(), self.height() + 200)  # Resize the window to fit the new panel, actual size will be determined later
 
     def showOTStats(self):
         """
@@ -460,8 +482,21 @@ class OTGUI(QMainWindow):
         lastMonthLayout.addWidget(QLabel(f"平均每次 OT 時長: {div(lastMonthTotalLength, lastMonthTotal):.2f} 分鐘"))
         grid_layout.addWidget(lastMonthFrame, 3, 1)
 
+        # Detailed frame, initially hidden
+        self.detailedStatsFrame = QFrame()
+        self.detailedStatsFrame.setFrameShape(QFrame.Box)
+        self.detailedStatsFrame.setLineWidth(2)
+        
+
+        # Add a button at the bottom that asks if the user want to show a more detailed statistics
+        button = QPushButton("顯示更詳細的統計")
+        button.clicked.connect(self.showDetailedStats)
+        grid_layout.addWidget(button, 4, 0, 1, 2)   # span 2 columns
+
         dialog.setLayout(grid_layout)
         dialog.exec()
+
+
 
 if __name__ == "__main__":
     otdStorage.loadJson()  # Load the JSON file
@@ -471,7 +506,7 @@ if __name__ == "__main__":
         version_flag = True
 
     app = QApplication(sys.argv)
-    app.setFont(QFont("Microsoft JhengHei UI ", 11))
+    app.setFont(QFont("Microsoft JhengHei UI", 11))
     ot_gui = OTGUI()
     ot_gui.show()
     sys.exit(app.exec())
