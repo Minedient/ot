@@ -38,6 +38,12 @@ class OTDStorage:
         try:
             with open(self.filename, 'r') as f:
                 self.data = json.load(f)
+            
+            # Ensure total is consistent with the number of entries
+            if len(self.data["entries"]) != self.data["total"]:
+               self.total = len(self.entries)
+               self.saveJson()
+
         except FileNotFoundError:
             self.data = self.newJson()
 
@@ -222,7 +228,47 @@ class OTDStorage:
         mean = self.totalLength / self.total
         variance = sum((entry["amount"] - mean) ** 2 for entry in self.entries) / self.total
         return variance ** 0.5
-
+    
+    def maximumLength(self) -> int:
+        """
+        Get the maximum amount from the JSON file.
+        """
+        if not self.entries:
+            return 0
+        return max(entry["amount"] for entry in self.entries)
+    
+    def minimumLength(self) -> int:
+        """
+        Get the minimum amount from the JSON file.
+        """
+        if not self.entries:
+            return 0
+        return min(entry["amount"] for entry in self.entries)
+    
+    def skewness(self) -> float:
+        """
+        Calculate the skewness of the amounts in the JSON file.
+        """
+        if not self.entries:
+            return 0.0
+        mean = self.totalLength / self.total
+        stddev = self.standardDeviation()
+        n = len(self.entries)
+        skew = sum((entry["amount"] - mean) ** 3 for entry in self.entries) / (n * stddev ** 3)
+        return skew
+    
+    def kurtosis(self) -> float:
+        """
+        Calculate the kurtosis of the amounts in the JSON file.
+        """
+        if not self.entries:
+            return 0.0
+        mean = self.totalLength / self.total
+        stddev = self.standardDeviation()
+        n = len(self.entries)
+        kurt = sum((entry["amount"] - mean) ** 4 for entry in self.entries) / (n * stddev ** 4) - 3
+        return kurt
+    
     def newEntry(self, date: str, amount: int, reason: str = None, by: str = None):
         """
         Create a new entry in the JSON file.

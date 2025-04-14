@@ -6,6 +6,11 @@ from src.json_func import OTDStorage
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 from PySide6.QtGui import QPainter, QFont, QRegularExpressionValidator
 from src.sdtime import SDTime
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+from matplotlib.dates import DateFormatter
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 jsonFileName = "ot.json"
 otdStorage = OTDStorage(jsonFileName)
@@ -18,20 +23,24 @@ class OTCalculator(QDialog):
     A dialog to calculate the OT time based on the start and end times and of course known work hour.
     """
     def __init__(self):
+        self.last_length = [0,0,0,0]
 
         def actualWorkHours():
             """
             Calculate the actual work hours based on the input times.
             """
-            # Ensure the full time is entered in the format HH:MM before passing to diffTime
-            for edit in [backTimeEdit, riceTimeEdit, lunchEndEdit, workEndEdit]:
-                if len(edit.text()) == 2:
-                    edit.setText(edit.text() + ":")
 
-            backTime = backTimeEdit.text() if len(backTimeEdit.text()) == 5 else ""
-            riceTime = riceTimeEdit.text() if len(riceTimeEdit.text()) == 5 else ""
-            lunchEnd = lunchEndEdit.text() if len(lunchEndEdit.text()) == 5 else ""
-            workEnd = workEndEdit.text() if len(workEndEdit.text()) == 5 else ""
+            # Map the last_length with the QTextEdit variable
+            for i, edit in enumerate([backTimeEdit, riceTimeEdit, lunchEndEdit, workEndEdit]):
+                if len(edit.text()) == 2 and not self.last_length[i] == 3:
+                    edit.setText(edit.text() + ":") # Add ":" if only hours are entered and not deleting 
+                
+                self.last_length[i] = len(edit.text())  # Update the last_length
+
+            backTime, riceTime, lunchEnd, workEnd = [
+                edit.text() if len(edit.text()) == 5 else "" 
+                for edit in (backTimeEdit, riceTimeEdit, lunchEndEdit, workEndEdit)
+            ]
 
             if not all([backTime, riceTime, lunchEnd, workEnd]):
                 return
@@ -48,8 +57,6 @@ class OTCalculator(QDialog):
             ot = totalActualLength - sdt.diffTime(otdStorage.workhour_start, otdStorage.workhour_end)
 
             otLengthLabel.setText(f"{ot} 分鐘" if isinstance(ot, int) else "--- 分鐘")
-
-
 
         super().__init__()
         self.setWindowTitle("OT 時長計算")
@@ -83,7 +90,7 @@ class OTCalculator(QDialog):
         leftLayout.addRow(QLabel("放工時間:"), QLineEdit(otdStorage.workhour_end, readOnly=True))
         gridLaytout.addWidget(leftFrame, 2, 0)
 
-        regExpr = QRegularExpressionValidator(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+        regExpr = QRegularExpressionValidator(r"^([0-9]|0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$")
 
         # Right frame with QFormLayout
         rightFrame = QFrame()
@@ -175,7 +182,8 @@ class OTRecordDialog(QDialog):
         formL.addRow(QLabel("<b>請各位同事記錄OT!</b>"), QLabel("OT Reminder"))
         calendar = QCalendarWidget()
         calendar.setGridVisible(True)
-        calendar.setMinimumDate(QDate.currentDate().addDays(-7)) # Set the minimum date to 7 days ago
+        calendar.setMaximumDate(QDate.currentDate().addDays(7)) # Instead of minimum date, set maximum date to 7 days later
+
         formL.addRow(QLabel("OT日期:"), calendar)
         length = QLineEdit()
         formL.addRow(QLabel("OT時長 (in mins):"), length)
@@ -258,6 +266,89 @@ class OTRecordDialog(QDialog):
         recorded_dialog.setLayout(recorded_layout)
         recorded_dialog.exec()
 
+class PlotDialog(QDialog):
+    """
+    A dialog to display a plot of the OT records using matplotlib.
+    """
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("OT 記錄圖表")
+        self.setMinimumSize(960, 640)  # Set minimum size for the dialog
+
+        # Create a layout for the dialog
+        layout = QVBoxLayout()
+        
+        # Set the font for matplotlib
+        plt.rcParams['font.family'] = 'Microsoft JhengHei'
+        plt.rcParams['font.size'] = 10.5
+
+        # Create a figure and canvas for matplotlib
+        self.figure, self.ax = plt.subplots()
+        self.canvas = FigureCanvas(self.figure)
+        # Create a toolbar for navigation
+        self.toolbar = NavigationToolbar(self.canvas, self)
+
+        layout.addWidget(self.toolbar)
+        layout.addWidget(self.canvas)
+
+        # Set the layout for the dialog
+        self.setLayout(layout)
+
+    def plot(self, data):
+
+        # Prepare data for the graph
+        dates = [QDateTime.fromString(entry['date'], "yyyy-MM-dd").toPython() for entry in data]
+        lengths = [entry['amount'] for entry in data]
+
+        # Create the plot
+        self.ax.plot(dates, lengths, marker='o', linestyle='-', color='b', label='OT 時長')
+
+        # Format the x-axis
+        self.ax.xaxis.set_major_formatter(DateFormatter("%Y-%m-%d"))
+        self.ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+        plt.xticks(rotation=45)
+
+        # Add labels and title
+        self.ax.set_title("OT 時間記錄", fontsize=16)
+        self.ax.set_xlabel("日期", fontsize=12)
+        self.ax.set_ylabel("OT 時長 (分鐘)", fontsize=12)
+        self.ax.legend()
+
+        # Add labels to each data point
+        for i, (date, length) in enumerate(zip(dates, lengths)):
+            self.ax.text(date, length + 1, f"{length}", fontsize=9, ha='center', va='bottom', color='black')
+
+        # Enable snapping to data points and showing labels
+        def on_hover(event):
+            if event.inaxes == self.ax:
+            # Find the closest data point
+                closest_index = min(range(len(dates)), key=lambda i: abs(mdates.date2num(dates[i]) - event.xdata))
+                closest_date = dates[closest_index]
+                closest_length = lengths[closest_index]
+
+                # Update the cursor position and label
+                cursor.set_data([closest_date], [closest_length])
+                label.set_position((event.xdata, event.ydata))
+                label.set_text(f"{closest_date.strftime('%Y-%m-%d')}\n{closest_length} mins")
+                label.set_visible(True)
+                self.figure.canvas.draw_idle()
+            else:
+                label.set_visible(False)
+                self.figure.canvas.draw_idle()
+
+        # Add a cursor and label for snapping
+        cursor, = self.ax.plot([], [], 'ro')  # Red dot for the cursor
+        label = self.ax.text(0, 0, "", fontsize=9, color="red", ha="center", va="bottom", visible=False)
+
+        # Connect the hover event
+        self.figure.canvas.mpl_connect("motion_notify_event", on_hover)
+
+        # Add grid for better readability
+        self.ax.grid(True, linestyle='--', alpha=0.6)
+
+        plt.tight_layout()
+
 class OTGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -290,17 +381,42 @@ class OTGUI(QMainWindow):
 
         # Connnect button
         button.clicked.connect(OTRecordDialog) 
-        button2.clicked.connect(self.showOTGraph)
+        button2.clicked.connect(self.showOTGraphMatPlot)
         button3.clicked.connect(self.showOTStats)
 
+    def showOTGraphMatPlot(self):
+        """
+        Display a time-based graph showing the amount of OT recorded.
+        """
+        # Create a new dialog for the plot
+        plot_dialog = PlotDialog(self)
+        
+        # Retrieve data from storage
+        data = otdStorage.entries
+
+        # Sort the entries by date
+        data.sort(key=lambda entry: QDateTime.fromString(entry['date'], "yyyy-MM-dd").toSecsSinceEpoch())
+
+        # Save the sorted entries back to the JSON file
+        otdStorage.saveJson()
+
+        plot_dialog.plot(data)  # Plot the data
+        plot_dialog.show()  # Show the dialog
     
     def showOTGraph(self):
         """
-        Display a time-based graph showing the amount of OT recorded.
+        Display a time-based graph showing the amount of OT recorded.   (Using pure PySide6)
         """
 
         # Retrieve data from storage
         data = otdStorage.entries  # Assuming this returns a list of dicts with 'date' and 'length'
+
+        # Sort the entries by date
+        data.sort(key=lambda entry: QDateTime.fromString(entry['date'], "yyyy-MM-dd").toSecsSinceEpoch())
+
+        # Save the sorted entries back to the JSON file
+        otdStorage.saveJson()
+
         minDate = QDateTime().fromString(otdStorage.firstDate(), "yyyy-MM-dd")
         maxDate = QDateTime().fromString(otdStorage.lastDate(), "yyyy-MM-dd")
 
@@ -353,25 +469,6 @@ class OTGUI(QMainWindow):
         layout.addWidget(close_button)
         dialog.setLayout(layout)
         dialog.exec()
-    
-    def showDetailedStats(self, turnOff=False):
-        """
-        This function add a new panel between the bottom'est button and the monthly stats panel,
-        after that resize the window to fit the new panel.
-
-        The state of the show detailed stats button will be changed to "隱藏更詳細的統計"
-        and this function will be called again to hide the detailed stats panel.
-        """
-        if turnOff:
-            # Hide the detailed stats panel
-            self.detailedStatsFrame.hide()
-            self.detailedStatsButton.setText("顯示更詳細的統計")
-            return
-        else:
-            # Show the detailed stats panel
-            self.detailedStatsFrame.show()
-            self.detailedStatsButton.setText("隱藏更詳細的統計")
-            self.resize(self.width(), self.height() + 200)  # Resize the window to fit the new panel, actual size will be determined later
 
     def showOTStats(self):
         """
@@ -400,17 +497,22 @@ class OTGUI(QMainWindow):
         totalStatsFrame = QFrame()
         totalStatsFrame.setFrameShape(QFrame.Box)
         totalStatsFrame.setLineWidth(2)
-        totalStatsLayout = QVBoxLayout()
+        totalStatsLayout = QGridLayout()
         totalStatsFrame.setLayout(totalStatsLayout)
         totalStatsLabel = QLabel("<b>總計</b>")
         totalStatsLabel.setAlignment(Qt.AlignCenter)
         totalStatsLabel.setStyleSheet("font-size: 14px; font-weight: bold;")
-        totalStatsLayout.addWidget(totalStatsLabel)
-        totalStatsLayout.addWidget(QLabel(f"OT 總時長: {otdStorage.totalLength} 分鐘"))
-        totalStatsLayout.addWidget(QLabel(f"OT 總次數: {otdStorage.total} 次"))
-        totalStatsLayout.addWidget(QLabel(f"平均每次 OT 時長: {div(otdStorage.totalLength, otdStorage.total):.2f} 分鐘"))
-        totalStatsLayout.addWidget(QLabel(f"OT 中位數: {otdStorage.median()} 分鐘"))
-        totalStatsLayout.addWidget(QLabel(f"OT 標準差: {otdStorage.standardDeviation():.2f} 分鐘"))
+        totalStatsLayout.addWidget(totalStatsLabel, 0, 0, 1, 2)
+        totalStatsLayout.addWidget(QLabel(f"OT 總時長: {otdStorage.totalLength} 分鐘"), 1, 0, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"OT 總次數: {otdStorage.total} 次"), 2, 0, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"平均每次 OT 時長: {div(otdStorage.totalLength, otdStorage.total):.2f} 分鐘"), 3, 0, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"OT 中位數: {otdStorage.median()} 分鐘"), 4, 0, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"OT 標準差: {otdStorage.standardDeviation():.2f} 分鐘"), 5, 0, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"OT 最長時長: {otdStorage.maximumLength()} 分鐘"), 1, 1, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"OT 最短時長: {otdStorage.minimumLength()} 分鐘"), 2, 1, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"OT 偏度: {otdStorage.skewness():.2f}"), 3, 1, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"OT 峰度: {otdStorage.kurtosis():.2f}"), 4, 1, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"ARIMA 預測值: {otdStorage.arima(otdStorage.arimaParameterEstimation()):.2f}"), 5, 1, 1, 1)
         grid_layout.addWidget(totalStatsFrame, 1, 0, 1, 2)
 
 
@@ -483,15 +585,11 @@ class OTGUI(QMainWindow):
         grid_layout.addWidget(lastMonthFrame, 3, 1)
 
         # Detailed frame, initially hidden
-        self.detailedStatsFrame = QFrame()
-        self.detailedStatsFrame.setFrameShape(QFrame.Box)
-        self.detailedStatsFrame.setLineWidth(2)
-        
-
-        # Add a button at the bottom that asks if the user want to show a more detailed statistics
-        button = QPushButton("顯示更詳細的統計")
-        button.clicked.connect(self.showDetailedStats)
-        grid_layout.addWidget(button, 4, 0, 1, 2)   # span 2 columns
+        detailedStatsFrame = QFrame()
+        detailedStatsFrame.setFrameShape(QFrame.Box)
+        detailedStatsFrame.setLineWidth(2)
+        detailedStatsFrame.setHidden(True)  # Initially hidden
+        grid_layout.addWidget(detailedStatsFrame, 4, 0, 1, 2)  # span 2 columns
 
         dialog.setLayout(grid_layout)
         dialog.exec()
