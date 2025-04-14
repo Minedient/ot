@@ -245,6 +245,18 @@ class OTDStorage:
             return 0
         return min(entry["amount"] for entry in self.entries)
     
+    def shapiro_wilkTest(self) -> float:
+        """
+        Perform the Shapiro-Wilk test for normality on the amounts in the JSON file.
+        """
+        if not self.entries:
+            return 0.0
+        from scipy.stats import shapiro
+        amounts = [entry["amount"] for entry in self.entries]
+        stat, p_value = shapiro(amounts)
+        print(f"Shapiro-Wilk test statistic: {stat}, p-value: {p_value}")
+        return p_value
+    
     def skewness(self) -> float:
         """
         Calculate the skewness of the amounts in the JSON file.

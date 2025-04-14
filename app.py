@@ -510,11 +510,10 @@ class OTGUI(QMainWindow):
         totalStatsLayout.addWidget(QLabel(f"OT 標準差: {otdStorage.standardDeviation():.2f} 分鐘"), 5, 0, 1, 1)
         totalStatsLayout.addWidget(QLabel(f"OT 最長時長: {otdStorage.maximumLength()} 分鐘"), 1, 1, 1, 1)
         totalStatsLayout.addWidget(QLabel(f"OT 最短時長: {otdStorage.minimumLength()} 分鐘"), 2, 1, 1, 1)
-        totalStatsLayout.addWidget(QLabel(f"OT 偏度: {otdStorage.skewness():.2f}"), 3, 1, 1, 1)
-        totalStatsLayout.addWidget(QLabel(f"OT 峰度: {otdStorage.kurtosis():.2f}"), 4, 1, 1, 1)
-        totalStatsLayout.addWidget(QLabel(f"ARIMA 預測值: {otdStorage.arima(otdStorage.arimaParameterEstimation()):.2f}"), 5, 1, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"正態分佈度: {otdStorage.shapiro_wilkTest():.2f}"), 3, 1, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"OT 偏度: {otdStorage.skewness():.2f}"), 4, 1, 1, 1)
+        totalStatsLayout.addWidget(QLabel(f"OT 峰度: {otdStorage.kurtosis():.2f}"), 5, 1, 1, 1)
         grid_layout.addWidget(totalStatsFrame, 1, 0, 1, 2)
-
 
         # The second frame that spans row 2 and column 1
         thisWeekFrame = QFrame()
