@@ -257,6 +257,20 @@ class OTDStorage:
         print(f"Shapiro-Wilk test statistic: {stat}, p-value: {p_value}")
         return p_value
     
+    def studentTConfidenceInterval(self, confidence: float = 0.95) -> tuple:
+        """
+        Calculate the confidence interval for the mean using Student's t-distribution.
+        """
+        if not self.entries:
+            return (0.0, 0.0)
+        import scipy.stats as stats
+        mean = self.totalLength / self.total
+        stddev = self.standardDeviation()
+        n = len(self.entries)
+        t_critical = stats.t.ppf((1 + confidence) / 2, n - 1)
+        margin_of_error = t_critical * (stddev / (n ** 0.5))
+        return (mean - margin_of_error, mean + margin_of_error)
+
     def skewness(self) -> float:
         """
         Calculate the skewness of the amounts in the JSON file.

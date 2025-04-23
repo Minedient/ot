@@ -1,16 +1,15 @@
-import os
+import os, sys
 from PySide6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel, QDialog, QCalendarWidget, QFormLayout, QLineEdit, QGridLayout, QFrame
 from PySide6.QtCore import QDate, Qt, QDateTime, QPointF
-import sys
-from src.json_func import OTDStorage
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 from PySide6.QtGui import QPainter, QFont, QRegularExpressionValidator
-from src.sdtime import SDTime
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.dates import DateFormatter
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from src.json_func import OTDStorage
+from src.sdtime import SDTime
 
 jsonFileName = "ot.json"
 otdStorage = OTDStorage(jsonFileName)
@@ -342,12 +341,62 @@ class PlotDialog(QDialog):
         label = self.ax.text(0, 0, "", fontsize=9, color="red", ha="center", va="bottom", visible=False)
 
         # Connect the hover event
-        self.figure.canvas.mpl_connect("motion_notify_event", on_hover)
+        # self.figure.canvas.mpl_connect("motion_notify_event", on_hover)
 
         # Add grid for better readability
         self.ax.grid(True, linestyle='--', alpha=0.6)
 
         plt.tight_layout()
+
+class HistogramDialog(QDialog):
+    """
+    A dialog to display a histogram of the OT records using matplotlib.
+    """
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("OT 記錄 Histogram")
+        self.setMinimumSize(960, 640)  # Set minimum size for the dialog
+
+        # Create a layout for the dialog
+        layout = QVBoxLayout()
+        
+        # Set the font for matplotlib
+        plt.rcParams['font.family'] = 'Microsoft JhengHei'
+        plt.rcParams['font.size'] = 10.5
+
+        # Create a figure and canvas for matplotlib
+        self.figure, self.ax = plt.subplots()
+        self.canvas = FigureCanvas(self.figure)
+        # Create a toolbar for navigation
+        self.toolbar = NavigationToolbar(self.canvas, self)
+
+        layout.addWidget(self.toolbar)
+        layout.addWidget(self.canvas)
+
+        # Set the layout for the dialog
+        self.setLayout(layout)
+
+    def plot(self, data):
+        """
+        Plot the histogram of the OT records.
+        """
+        # Prepare data for the histogram
+        lengths = [entry['amount'] for entry in data]
+
+        # Create the histogram
+        self.ax.hist(lengths, bins=30, color='blue', alpha=0.7, edgecolor='black')
+
+        # Add labels and title
+        self.ax.set_title("OT 時間 Histogram", fontsize=16)
+        self.ax.set_xlabel("OT 時長 (分鐘)", fontsize=12)
+        self.ax.set_ylabel("次數", fontsize=12)
+
+        # Add grid for better readability
+        self.ax.grid(True, linestyle='--', alpha=0.6)
+
+        plt.tight_layout()
+        # self.canvas.draw()  # Draw the canvas to display the histogram
 
 class OTGUI(QMainWindow):
     def __init__(self):
@@ -371,9 +420,11 @@ class OTGUI(QMainWindow):
         button = QPushButton("按我記錄OT")
         button2 = QPushButton("按我查看OT記錄(Graph)")
         button3 =  QPushButton("按我查看OT記錄(統計)")
+        button4 = QPushButton("按我查看OT記錄(Histogram)")
         layout.addWidget(button)
         layout.addWidget(button2)
         layout.addWidget(button3)
+        layout.addWidget(button4)
         # Set the layout to a central widget
         container = QWidget()
         container.setLayout(layout)
@@ -383,6 +434,17 @@ class OTGUI(QMainWindow):
         button.clicked.connect(OTRecordDialog) 
         button2.clicked.connect(self.showOTGraphMatPlot)
         button3.clicked.connect(self.showOTStats)
+        button4.clicked.connect(self.showHistogram)
+
+    def showHistogram(self):
+        """
+        Display a histogram of the OT records using matplotlib.
+        """
+        histogram_dialog = HistogramDialog(self)
+        data = otdStorage.entries  # Assuming this returns a list of dicts with 'date' and 'length'
+        data.sort(key=lambda entry: QDateTime.fromString(entry['date'], "yyyy-MM-dd").toSecsSinceEpoch())
+        histogram_dialog.plot(data)  # Plot the data
+        histogram_dialog.show()  # Show the dialog
 
     def showOTGraphMatPlot(self):
         """
@@ -510,7 +572,8 @@ class OTGUI(QMainWindow):
         totalStatsLayout.addWidget(QLabel(f"OT 標準差: {otdStorage.standardDeviation():.2f} 分鐘"), 5, 0, 1, 1)
         totalStatsLayout.addWidget(QLabel(f"OT 最長時長: {otdStorage.maximumLength()} 分鐘"), 1, 1, 1, 1)
         totalStatsLayout.addWidget(QLabel(f"OT 最短時長: {otdStorage.minimumLength()} 分鐘"), 2, 1, 1, 1)
-        totalStatsLayout.addWidget(QLabel(f"正態分佈度: {otdStorage.shapiro_wilkTest():.2f}"), 3, 1, 1, 1)
+        tInterval = otdStorage.studentTConfidenceInterval()
+        totalStatsLayout.addWidget(QLabel(f"95%可信區間: {tInterval[0]:.2f} 分鐘 - {tInterval[1]:.2f} 分鐘"), 3, 1, 1, 1)
         totalStatsLayout.addWidget(QLabel(f"OT 偏度: {otdStorage.skewness():.2f}"), 4, 1, 1, 1)
         totalStatsLayout.addWidget(QLabel(f"OT 峰度: {otdStorage.kurtosis():.2f}"), 5, 1, 1, 1)
         grid_layout.addWidget(totalStatsFrame, 1, 0, 1, 2)
@@ -592,7 +655,6 @@ class OTGUI(QMainWindow):
 
         dialog.setLayout(grid_layout)
         dialog.exec()
-
 
 
 if __name__ == "__main__":
